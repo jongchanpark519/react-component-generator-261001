@@ -33,7 +33,7 @@ function App() {
   const [keyMissing, setKeyMissing] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const keyInputRef = useRef<HTMLInputElement>(null);
-  const { components, history, isLoading, error, generate, removeComponent, clearAll } =
+  const { components, streaming, history, isLoading, error, generate, removeComponent, clearAll } =
     useComponentGenerator();
 
   useEffect(() => {
@@ -179,7 +179,7 @@ function App() {
             </div>
           )}
 
-          {isLoading && (
+          {isLoading && !streaming && (
             <div className="window window--progress" role="status">
               <div className="titlebar">
                 <span className="titlebar-title">생성 중</span>
@@ -199,6 +199,16 @@ function App() {
           )}
 
           <div className="results-grid">
+            {streaming && (
+              <ComponentCard
+                key={streaming.id}
+                component={streaming}
+                onRemove={removeComponent}
+                onRegenerate={handleGenerate}
+                isLoading={isLoading}
+                isStreaming
+              />
+            )}
             {components.map((component) => (
               <ComponentCard
                 key={component.id}

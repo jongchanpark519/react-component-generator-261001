@@ -664,6 +664,24 @@
   font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
   font-size: 0.9rem;
   line-height: 1.65;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.stream-caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #e2e8f0;
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 1080px) {
