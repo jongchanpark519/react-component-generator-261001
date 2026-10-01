@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { PromptInput } from './components/PromptInput';
 import { ComponentCard } from './components/ComponentCard';
 import { useComponentGenerator } from './hooks/useComponentGenerator';
+import { useLocalStorageState } from './hooks/useLocalStorageState';
+import { reviveApiKeys, reviveProvider } from './utils/revive';
 import type { Provider } from './types';
 import './App.css';
 
@@ -11,9 +13,18 @@ const PROVIDER_CONFIG = {
 } as const;
 
 function App() {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKeys, setApiKeys] = useLocalStorageState<Record<Provider, string>>(
+    'rcg:apiKeys',
+    { anthropic: '', google: '' },
+    reviveApiKeys,
+  );
   const [showKey, setShowKey] = useState(false);
-  const [provider, setProvider] = useState<Provider>('google');
+  const [provider, setProvider] = useLocalStorageState<Provider>(
+    'rcg:provider',
+    'google',
+    reviveProvider,
+  );
+  const apiKey = apiKeys[provider];
   const [envKeys, setEnvKeys] = useState<Record<Provider, boolean>>({
     anthropic: false,
     google: false,
@@ -22,7 +33,7 @@ function App() {
   const [keyMissing, setKeyMissing] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const keyInputRef = useRef<HTMLInputElement>(null);
-  const { components, isLoading, error, generate, removeComponent, clearAll } =
+  const { components, history, isLoading, error, generate, removeComponent, clearAll } =
     useComponentGenerator();
 
   useEffect(() => {
@@ -64,11 +75,10 @@ function App() {
 
   const handleProviderChange = (newProvider: Provider) => {
     setProvider(newProvider);
-    setApiKey('');
   };
 
   const handleKeyChange = (value: string) => {
-    setApiKey(value);
+    setApiKeys((prev) => ({ ...prev, [provider]: value }));
     if (value.trim()) setKeyMissing(false);
   };
 
@@ -146,7 +156,7 @@ function App() {
           <div className="titlebar">
             <h1 className="titlebar-title" id="prompt-title">새 컴포넌트</h1>
           </div>
-          <PromptInput onGenerate={handleGenerate} isLoading={isLoading} />
+          <PromptInput onGenerate={handleGenerate} isLoading={isLoading} history={history} />
         </section>
 
         {error && (

@@ -23,6 +23,7 @@ React 19 프론트엔드. `/api/generate`, `/api/config`만 서버와 통신한�
 
 ## Local Golden Rules
 
-- 사용자가 입력한 API 키는 컴포넌트 state에만 둔다 (`App.tsx:14`). localStorage 등에 저장하지 마라.
+- 새로고침 유지 대상(API 키·Provider·프롬프트 히스토리·생성 컴포넌트)은 `useLocalStorageState`로 `rcg:*` 키에만 저장한다. 그 외 상태나 다른 저장소(쿠키 등)에 API 키를 두지 마라. 키는 서버 `/api/generate` 요청 외로 전송하지 않는다.
+- localStorage 읽기값은 반드시 `utils/revive.ts`의 revive 함수로 검증한다 (`createdAt`은 문자열 → `Date` 복원 필요).
 - `LivePreview`의 `noInline`을 제거하지 마라 (루트 규칙 참조). 생성 코드는 `render()`로 끝나야 한다.
 - `App.tsx`(208줄)에 로직이 몰려 있고 테스트가 없다. 기능 추가 시 훅/하위 컴포넌트로 분리하라.
