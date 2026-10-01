@@ -1,5 +1,6 @@
 import { stripCodeFences, ensureRenderCall } from './generator';
 import { withModelFallback } from './fallback';
+import { readSseData, extractAnthropicDelta, extractGoogleDelta } from './stream';
 
 // 우선순위 순서. 앞 모델이 실패하면 다음 모델로 폴백한다.
 const GOOGLE_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.5-flash'];
@@ -65,7 +66,19 @@ function resolveApiKey(provider: Provider, clientKey?: string): string | null {
   return clientKey || ENV_KEYS[provider] || null;
 }
 
-async function callAnthropic(prompt: string, apiKey: string): Promise<string> {
+// SSE 본문을 텍스트 조각 스트림으로 변환한다.
+async function* textDeltas(
+  body: ReadableStream<Uint8Array>,
+  extract: (data: string) => string,
+): AsyncGenerator<string> {
+  for await (const data of readSseData(body)) {
+    const text = extract(data);
+    if (text) yield text;
+  }
+}
+
+// 프로바이더 연결을 먼저 열어 HTTP 에러(503/429 등)를 스트림 시작 전에 던진다.
+async function callAnthropic(prompt: string, apiKey: string): Promise<AsyncGenerator<string>> {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -76,27 +89,21 @@ async function callAnthropic(prompt: string, apiKey: string): Promise<string> {
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 4096,
+      stream: true,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
 
-  if (!response.ok) {
+  if (!response.ok || !response.body) {
     throw new Error(`Claude API error: ${response.status}`);
   }
 
-  const data = (await response.json()) as {
-    content: Array<{ type: string; text?: string }>;
-  };
-
-  return data.content
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text)
-    .join('');
+  return textDeltas(response.body, extractAnthropicDelta);
 }
 
-async function callGoogleModel(prompt: string, apiKey: string, model: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+async function callGoogleModel(prompt: string, apiKey: string, model: string): Promise<AsyncGenerator<string>> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -108,35 +115,55 @@ async function callGoogleModel(prompt: string, apiKey: string, model: string): P
     }),
   });
 
-  if (!response.ok) {
+  if (!response.ok || !response.body) {
     throw new Error(`Gemini API error: ${response.status}`);
   }
 
-  const data = (await response.json()) as {
-    candidates: Array<{
-      content: { parts: Array<{ text?: string }> };
-      finishReason?: string;
-    }>;
-  };
-
-  const candidate = data.candidates?.[0];
-  if (candidate?.finishReason === 'MAX_TOKENS') {
-    throw new Error('생성된 코드가 너무 길어 잘렸습니다. 더 간단한 컴포넌트를 요청해주세요.');
-  }
-
-  return (
-    candidate?.content?.parts
-      ?.map((part) => part.text)
-      ?.join('') ?? ''
-  );
+  return textDeltas(response.body, extractGoogleDelta);
 }
 
-async function callGoogle(prompt: string, apiKey: string): Promise<string> {
+// 모델 폴백은 연결을 여는 시점에만 적용된다. 스트림 도중 실패는 error 이벤트로 전달된다.
+async function callGoogle(prompt: string, apiKey: string): Promise<AsyncGenerator<string>> {
   return withModelFallback(GOOGLE_MODELS, (model) => callGoogleModel(prompt, apiKey, model));
+}
+
+const NDJSON_HEADERS = {
+  ...CORS_HEADERS,
+  'Content-Type': 'application/x-ndjson; charset=utf-8',
+  'Cache-Control': 'no-cache',
+};
+
+// 텍스트 조각을 NDJSON(delta/done/error) 응답으로 내보낸다.
+// 완료 시 전체 텍스트를 stripCodeFences -> ensureRenderCall로 정규화해 done 이벤트로 보낸다.
+function streamResponse(deltas: AsyncGenerator<string>): Response {
+  const encoder = new TextEncoder();
+
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: object) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+
+      try {
+        let raw = '';
+        for await (const text of deltas) {
+          raw += text;
+          send({ type: 'delta', text });
+        }
+        send({ type: 'done', code: ensureRenderCall(stripCodeFences(raw)) });
+      } catch (err) {
+        send({ type: 'error', error: err instanceof Error ? err.message : 'Unknown error' });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(body, { headers: NDJSON_HEADERS });
 }
 
 const server = Bun.serve({
   port: 3002,
+  // 모델 응답 사이 간격이 길어도 스트림이 끊기지 않도록 한다 (기본 10초).
+  idleTimeout: 120,
   async fetch(req) {
     if (req.method === 'OPTIONS') {
       return new Response(null, { headers: CORS_HEADERS });
@@ -180,14 +207,12 @@ const server = Bun.serve({
           );
         }
 
-        const text =
+        const deltas =
           provider === 'google'
             ? await callGoogle(prompt, resolvedKey)
             : await callAnthropic(prompt, resolvedKey);
 
-        const code = ensureRenderCall(stripCodeFences(text));
-
-        return Response.json({ code }, { headers: CORS_HEADERS });
+        return streamResponse(deltas);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
 
