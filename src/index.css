@@ -1,0 +1,57 @@
+/* Galmuri by Lee Minseo — SIL Open Font License 1.1 */
+@font-face {
+  font-family: Galmuri11;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/Galmuri11.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: Galmuri11;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/Galmuri11-Bold.woff2') format('woff2');
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100vh;
+  font-family: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #000;
+  background-color: #a9aec6;
+  /* 클래식 데스크톱의 디더 패턴 */
+  background-image:
+    radial-gradient(rgba(20, 24, 60, 0.16) 1px, transparent 1.2px);
+  background-size: 4px 4px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: #2b3fd6;
+  color: #fff;
+}
